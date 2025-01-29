@@ -135,18 +135,15 @@ export const getMembersFromGroup = (group: GroupEntity): number => {
 export const getPluginInfo = (
   permissions: PluginPermissionMetaData[],
   permissionName?: string,
-): { pluginId: string; isResourced: boolean } =>
+): { pluginId: string; isResourced: boolean; resourceType?: string } =>
   permissions.reduce(
     (
-      acc: { pluginId: string; isResourced: boolean },
+      acc: { pluginId: string; isResourced: boolean; resourceType?: string },
       p: PluginPermissionMetaData,
     ) => {
       const policy = p.policies.find(pol => {
         if (pol.name === permissionName) {
           return true;
-        }
-        if (isResourcedPolicy(pol)) {
-          return pol.resourceType === permissionName;
         }
         return false;
       });
@@ -154,6 +151,7 @@ export const getPluginInfo = (
         return {
           pluginId: p.pluginId || '-',
           isResourced: isResourcedPolicy(policy) || false,
+          resourceType: isResourcedPolicy(policy) ? policy.resourceType : '',
         };
       }
       return acc;
@@ -172,7 +170,7 @@ const getAllPolicies = (
   policies: PolicyDetails[],
 ) => {
   const deniedPolicies = policies?.reduce((acc, p) => {
-    const perm = isResourcedPolicy(p) ? p.resourceType : p.name;
+    const perm = p.name;
     if (
       permission === perm &&
       !allowedPolicies.find(
@@ -231,6 +229,8 @@ export const getPermissionsData = (
             }),
             isResourced: getPluginInfo(permissionPolicies, policy?.permission)
               .isResourced,
+            resourceType: getPluginInfo(permissionPolicies, policy?.permission)
+              .resourceType,
           });
         }
       }
@@ -319,13 +319,24 @@ export const getConditionalPermissionsData = (
 ): PermissionsData[] => {
   return conditionalPermissions.reduce((acc: any, cp) => {
     const conditions = getConditionsData(cp.conditions);
-    const allPolicies =
-      permissionPolicies.pluginsPermissions?.[cp.pluginId]?.policies?.[
-        cp.resourceType
-      ]?.policies ?? [];
     const allowedPermissions = cp.permissionMapping.map(action =>
       action.toLocaleLowerCase('en-US'),
     );
+    const permissions = allowedPermissions
+      .map(aP =>
+        permissionPolicies.pluginsPermissions?.[cp.pluginId]?.permissions?.find(
+          p =>
+            permissionPolicies.pluginsPermissions?.[cp.pluginId]?.policies?.[p]
+              ?.resourceType === cp.resourceType &&
+            permissionPolicies.pluginsPermissions?.[cp.pluginId]?.policies?.[
+              p
+            ]?.policies?.findIndex(po => po === aP),
+        ),
+      )
+      .filter(val => !!val) as string[];
+    const allPolicies = (pm: string) =>
+      permissionPolicies.pluginsPermissions?.[cp.pluginId]?.policies?.[pm]
+        ?.policies ?? [];
     const policyString = allowedPermissions
       .map(p => p[0].toLocaleUpperCase('en-US') + p.slice(1))
       .join(', ');
@@ -333,17 +344,16 @@ export const getConditionalPermissionsData = (
     return [
       ...acc,
       ...(conditions
-        ? [
-            {
-              plugin: cp.pluginId,
-              permission: cp.resourceType,
-              isResourced: true,
-              policies: getPoliciesData(allowedPermissions, allPolicies),
-              policyString,
-              conditions,
-              id: cp.id,
-            },
-          ]
+        ? permissions.map(perm => ({
+            plugin: cp.pluginId,
+            permission: perm,
+            resourceType: cp.resourceType,
+            isResourced: true,
+            policies: getPoliciesData(allowedPermissions, allPolicies(perm)),
+            policyString,
+            conditions,
+            id: cp.id,
+          }))
         : []),
     ];
   }, []);
