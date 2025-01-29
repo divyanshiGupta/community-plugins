@@ -58,6 +58,8 @@ export type PermissionsDataSet = {
   isResourced?: boolean;
 };
 
+export type SelectedPlugin = { label: string; value: string };
+
 export type PermissionsData = {
   id?: number;
   plugin: string;

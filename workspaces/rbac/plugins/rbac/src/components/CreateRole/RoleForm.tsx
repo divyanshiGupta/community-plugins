@@ -236,7 +236,7 @@ export const RoleForm = ({
 
   const canNextPermissionPoliciesStep = () => {
     return (
-      formik.values.permissionPoliciesRows.filter(pp => !!pp.plugin).length ===
+      formik.values.permissionPoliciesRows.filter(pp => !!pp?.plugin).length ===
         formik.values.permissionPoliciesRows.length &&
       (!formik.errors.permissionPoliciesRows ||
         (
@@ -327,6 +327,7 @@ export const RoleForm = ({
           >
             <PermissionPoliciesForm
               permissionPoliciesRows={formik.values.permissionPoliciesRows}
+              selectedPlugins={formik.values.selectedPlugins}
               permissionPoliciesRowsError={
                 formik.errors
                   .permissionPoliciesRows as FormikErrors<PermissionsData>[]

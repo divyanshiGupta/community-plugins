@@ -111,16 +111,12 @@ export const getPermissionPolicies = (
 ): PermissionPolicies => {
   return policies.reduce(
     (ppsAcc: PermissionPolicies, policy: PolicyDetails) => {
-      const permission = isResourcedPolicy(policy)
-        ? (policy as ResourcedPolicy).resourceType
-        : policy.name;
+      const permission = policy.name;
       return {
         ...ppsAcc,
         [permission]: policies.reduce(
           (policiesAcc: { policies: string[]; isResourced: boolean }, pol) => {
-            const perm = isResourcedPolicy(pol)
-              ? (pol as ResourcedPolicy).resourceType
-              : pol.name;
+            const perm = pol.name;
             if (permission === perm)
               return {
                 policies: uniqBy(
@@ -128,6 +124,7 @@ export const getPermissionPolicies = (
                   val => val,
                 ),
                 isResourced: isResourcedPolicy(pol),
+                resourceType: isResourcedPolicy(pol) ? pol.resourceType : '',
               };
             return policiesAcc;
           },
@@ -148,15 +145,13 @@ export const getPluginsPermissionPoliciesData = (
   const pluginsPermissions = pluginsPermissionPolicies.reduce(
     (acc: PluginsPermissions, pp, index) => {
       const permissions = pp.policies.reduce((plcAcc: string[], plc) => {
-        const permission = isResourcedPolicy(plc)
-          ? (plc as ResourcedPolicy).resourceType
-          : plc.name;
+        const permission = plc.name;
         return [...plcAcc, permission];
       }, []);
       return {
         ...acc,
         [plugins[index]]: {
-          permissions: uniqBy(permissions ?? [], val => val),
+          permissions: permissions ?? [],
           policies: {
             ...(pp.policies ? getPermissionPolicies(pp.policies) : {}),
           },

@@ -19,37 +19,22 @@ import { useAsync } from 'react-use';
 import { Progress } from '@backstage/core-components';
 import { useApi } from '@backstage/core-plugin-api';
 
-import AddIcon from '@mui/icons-material/Add';
-import Button from '@mui/material/Button';
 import FormHelperText from '@mui/material/FormHelperText';
-import { styled, Theme } from '@mui/material/styles';
 import { FormikErrors } from 'formik';
 
 import { rbacApiRef } from '../../api/RBACBackendClient';
 import { useConditionRules } from '../../hooks/useConditionRules';
-import { PermissionsData } from '../../types';
+import { PermissionsData, SelectedPlugin } from '../../types';
 import { getPluginsPermissionPoliciesData } from '../../utils/create-role-utils';
 import { ConditionsData } from '../ConditionalAccess/types';
-import { initialPermissionPolicyRowValue } from './const';
-import { PermissionPoliciesFormRow } from './PermissionPoliciesFormRow';
 import { RoleFormValues } from './types';
-
-const classes = {
-  permissionPoliciesForm: 'permission-policies-form',
-};
-
-const PermissionPoliciesFormContainer = styled('div')(
-  ({ theme }: { theme: Theme }) => ({
-    [`&.${classes.permissionPoliciesForm}`]: {
-      padding: '20px',
-      border: `2px solid ${theme.palette.border}`,
-      borderRadius: '5px',
-    },
-  }),
-);
+import PermissionPoliciesFormTable from './PermissionPoliciesFormTable';
+import PluginsDropdown from './PluginsDropdown';
+import Box from '@mui/material/Box';
 
 type PermissionPoliciesFormProps = {
   permissionPoliciesRows: PermissionsData[];
+  selectedPlugins: SelectedPlugin[];
   permissionPoliciesRowsError: FormikErrors<PermissionsData>[];
   setFieldValue: (
     field: string,
@@ -63,12 +48,16 @@ type PermissionPoliciesFormProps = {
 export const PermissionPoliciesForm = ({
   permissionPoliciesRows,
   permissionPoliciesRowsError,
+  selectedPlugins,
   setFieldValue,
   setFieldError,
   handleBlur,
 }: PermissionPoliciesFormProps) => {
   const rbacApi = useApi(rbacApiRef);
   const conditionRules = useConditionRules();
+
+  const { data: conditionRulesData, error: conditionRulesError } =
+    conditionRules;
 
   const {
     value: permissionPolicies,
@@ -83,53 +72,34 @@ export const PermissionPoliciesForm = ({
       ? getPluginsPermissionPoliciesData(permissionPolicies)
       : undefined;
 
-  const onChangePlugin = (plugin: string, index: number) => {
-    setFieldValue(`permissionPoliciesRows[${index}].plugin`, plugin, true);
-    setFieldValue(`permissionPoliciesRows[${index}].permission`, '', false);
-    setFieldValue(`permissionPoliciesRows[${index}].isResourced`, false, false);
-    setFieldValue(
-      `permissionPoliciesRows[${index}].conditions`,
-      undefined,
-      false,
-    );
-    setFieldValue(
-      `permissionPoliciesRows[${index}].policies`,
-      initialPermissionPolicyRowValue.policies,
-      false,
-    );
-  };
-
-  const onChangePermission = (
+  const onSelectPermission = (
+    plugin: string,
     permission: string,
-    index: number,
     isResourced: boolean,
-    policies?: string[],
+    policies: string[],
   ) => {
-    setFieldValue(
-      `permissionPoliciesRows[${index}].permission`,
+    const ppr = {
+      plugin,
       permission,
-      true,
-    );
-    setFieldValue(
-      `permissionPoliciesRows[${index}].isResourced`,
       isResourced,
-      false,
-    );
+      policies: policies.map(p => ({ policy: p, effect: 'allow' })),
+    };
     setFieldValue(
-      `permissionPoliciesRows[${index}].conditions`,
-      undefined,
-      false,
-    );
-    setFieldValue(
-      `permissionPoliciesRows[${index}].policies`,
-      policies
-        ? policies.map(p => ({ policy: p, effect: 'allow' }))
-        : initialPermissionPolicyRowValue.policies,
+      'permissionPoliciesRows',
+      [...permissionPoliciesRows, ppr],
       false,
     );
   };
 
-  const onChangePolicy = (
+  const onRemovePermission = (index: number) => {
+    const finalPps = permissionPoliciesRows.filter(
+      (_ppr, pIndex) => index !== pIndex,
+    );
+    setFieldError(`permissionPoliciesRows[${index}]`, undefined);
+    setFieldValue('permissionPoliciesRows', finalPps, false);
+  };
+
+  const onSelectPolicy = (
     isChecked: boolean,
     policyIndex: number,
     index: number,
@@ -147,87 +117,105 @@ export const PermissionPoliciesForm = ({
       setFieldValue(`permissionPoliciesRows[${index}].id`, undefined);
   };
 
-  const onRowRemove = (index: number) => {
+  const onRemoveAllPlugins = () => {
+    setFieldValue(`selectedPlugins`, [], true);
+    setFieldError(`permissionPoliciesRows`, undefined);
+    setFieldValue('permissionPoliciesRows', [], false);
+  };
+
+  const onRemovePlugin = (plugin: string) => {
+    const selPlugins = selectedPlugins.filter(sp => sp.value !== plugin);
     const finalPps = permissionPoliciesRows.filter(
-      (_pp, ppIndex) => index !== ppIndex,
+      ppr => ppr.plugin !== plugin,
     );
-    setFieldError(`permissionPoliciesRows[${index}]`, undefined);
+    setFieldValue(`selectedPlugins`, selPlugins, true);
+    setFieldError(`permissionPoliciesRows`, undefined);
     setFieldValue('permissionPoliciesRows', finalPps, false);
   };
 
-  const onRowAdd = () =>
-    setFieldValue(
-      'permissionPoliciesRows',
-      [...permissionPoliciesRows, initialPermissionPolicyRowValue],
-      false,
-    );
+  const getAllPlugins = () => {
+    let allPlugins: SelectedPlugin[] = [];
+    if (permissionPoliciesData?.plugins) {
+      allPlugins = permissionPoliciesData.plugins.map(p => ({
+        label: p.charAt(0).toLocaleUpperCase('en-US') + p.substring(1),
+        value: p,
+      }));
+    }
+    const allPluginsItem =
+      allPlugins.length > 0
+        ? [
+            {
+              label: `All plugins (${allPlugins.length})`,
+              value: '',
+            },
+          ]
+        : [];
+    return [...allPluginsItem, ...allPlugins];
+  };
+
+  const getPermissionPoliciesTableData = () => {
+    return selectedPlugins
+      .map(p =>
+        p.value
+          ? [
+              {
+                name: p.label,
+                plugin: p.value,
+                permissionPolicies: permissionPoliciesData?.pluginsPermissions[
+                  p.value
+                ].permissions.map(perm => ({
+                  permission: perm,
+                  actions:
+                    permissionPoliciesData?.pluginsPermissions[p.value]
+                      .policies[perm].policies,
+                  isResourced:
+                    permissionPoliciesData?.pluginsPermissions[p.value]
+                      .policies[perm].isResourced,
+                  resourceType:
+                    permissionPoliciesData?.pluginsPermissions[p.value]
+                      .policies[perm].resourceType,
+                })),
+              },
+            ]
+          : [],
+      )
+      .flat();
+  };
 
   return (
     <div>
       <FormHelperText>
-        Permission policies can be selected for each plugin. You can add
-        multiple permission policies using +Add option.
+        By default, users are not granted access to any plugins. To grant user
+        access, select the plugins you want to enable. Then, select which
+        actions you would like to give user permission to.
       </FormHelperText>
       <br />
       {permissionPoliciesLoading ? (
         <Progress />
       ) : (
-        <PermissionPoliciesFormContainer
-          className={classes.permissionPoliciesForm}
-        >
-          {permissionPoliciesRows.map((pp, index) => (
-            <PermissionPoliciesFormRow
-              key={index}
-              permissionPoliciesRowError={
-                permissionPoliciesRowsError?.[index] ?? {}
-              }
-              rowName={`permissionPoliciesRows[${index}]`}
-              permissionPoliciesRowData={pp}
-              permissionPoliciesData={permissionPoliciesData}
-              rowCount={permissionPoliciesRows.length}
-              conditionRules={conditionRules}
-              onChangePlugin={(plugin: string) => onChangePlugin(plugin, index)}
-              onChangePermission={(
-                permission: string,
-                isResourced: boolean,
-                policies?: string[],
-              ) => onChangePermission(permission, index, isResourced, policies)}
-              onChangePolicy={(isChecked: boolean, policyIndex: number) =>
-                onChangePolicy(isChecked, policyIndex, index)
-              }
-              onAddConditions={(conditions?: ConditionsData) =>
-                onAddConditions(index, conditions)
-              }
-              onRemove={() => onRowRemove(index)}
-              handleBlur={handleBlur}
-              getPermissionDisabled={(permission: string) => {
-                const pluginPermissionPolicies = permissionPoliciesRows.filter(
-                  ppr => ppr.plugin === pp.plugin,
-                );
-                const previouslySelectedPermission =
-                  !!pluginPermissionPolicies.find(
-                    ppp => ppp.permission === permission,
-                  );
-                return (
-                  previouslySelectedPermission &&
-                  !permissionPoliciesData?.pluginsPermissions[pp.plugin]
-                    ?.policies[permission ?? '']?.isResourced
-                );
-              }}
-            />
-          ))}
-          <Button
-            sx={{
-              color: theme => theme.palette.primary.light,
-            }}
-            size="small"
-            onClick={onRowAdd}
-            name="add-permission-policy"
-          >
-            <AddIcon />
-            Add
-          </Button>
-        </PermissionPoliciesFormContainer>
+        <Box>
+          <PluginsDropdown
+            allPlugins={getAllPlugins()}
+            selectedPlugins={selectedPlugins}
+            setFieldValue={setFieldValue}
+            handleBlur={handleBlur}
+            onRemovePlugin={onRemovePlugin}
+            onRemoveAllPlugins={onRemoveAllPlugins}
+          />
+          <br />
+          <br />
+          <PermissionPoliciesFormTable
+            selectedPluginsCount={selectedPlugins?.length ?? 0}
+            data={getPermissionPoliciesTableData()}
+            permissionPoliciesRows={permissionPoliciesRows ?? []}
+            onSelectPermission={onSelectPermission}
+            onSelectPolicy={onSelectPolicy}
+            conditionRulesData={conditionRulesData}
+            onRemovePermission={onRemovePermission}
+            onRemovePlugin={onRemovePlugin}
+            onAddConditions={onAddConditions}
+          />
+        </Box>
       )}
       {!permissionPoliciesLoading &&
         (permissionPoliciesErr?.message ||
